@@ -239,6 +239,17 @@ public:
 				// The new program isn't going to have any of our breakpoints, so we can restore it back to the CPU affinity kcov started with
 				kcov_debug(ENGINE_MSG, "PT exec for %d\n", m_activeChild);
 				ptrace_sys::restore_cpu_affinity(m_activeChild);
+
+				// Programs started by the covered program aren't covered, so stop tracing them rather than stopping at each of their clones, forks and signals
+				if (who != m_firstChild)
+				{
+					kcov_debug(ENGINE_MSG, "PT detaching from %d\n", who);
+					ptrace_sys::detach(who);
+					m_children.erase(who);
+
+					return waitEvent();
+				}
+
 				out.data = 0;
 			}
 			else if (sig == SIGTRAP || sig == SIGSTOP || sig == sigill)

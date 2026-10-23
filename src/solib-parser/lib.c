@@ -17,6 +17,35 @@
 
 static struct phdr_data *phdr_data;
 
+// Programs started by a covered program inherit LD_PRELOAD, but kcov stops tracing them at exec, and nothing would handle their breakpoint.
+// Without /proc, assume we're traced.
+static int is_traced(void)
+{
+	static int traced = -1;
+	char line[256];
+	FILE *fp;
+
+	if (traced >= 0)
+		return traced;
+
+	traced = 1;
+	fp = fopen("/proc/self/status", "r");
+	if (!fp)
+		return traced;
+
+	while (fgets(line, sizeof(line), fp))
+	{
+		if (strncmp(line, "TracerPid:", 10) == 0)
+		{
+			traced = atoi(line + 10) != 0;
+			break;
+		}
+	}
+	fclose(fp);
+
+	return traced;
+}
+
 static int phdrCallback(struct dl_phdr_info *info, size_t size, void *data)
 {
 	// the first entry is used to determine the executable's "base address"
@@ -117,6 +146,9 @@ void *dlopen(const char *filename, int flag)
 
 	out = orig_dlopen(filename, flag);
 
+	if (!is_traced())
+		return out;
+
 	parse_solibs();
 	force_breakpoint();
 
@@ -126,6 +158,9 @@ void *dlopen(const char *filename, int flag)
 
 void  __attribute__((constructor))kcov_solib_at_startup(void)
 {
+	if (!is_traced())
+		return;
+
 	parse_solibs();
 	force_breakpoint();
 }
